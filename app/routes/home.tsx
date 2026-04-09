@@ -6,14 +6,6 @@ const MAX_ATTEMPTS = 500;
 // In-memory store for rate limiting (replace with Redis in production)
 const attemptMap = new Map<string, { count: number; resetTime: number }>();
 
-// RSA Public Key (from your RSA key pair)
-const PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
-MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCSZdW0UjnXLENtH/6/nXiWuDtm
-GK/dGIp9d06cEHK8LsUBvKUqYvUlD5kMQEYZitu+K5Hl3rBj24gUbEYcoNOaMEd3
-PLW5sH0kEjZGMWAF5vKSXzW2qzAKvRujW3nGcTvvBgES+VDnlMHbTMQWvN6J8D4X
-LGfwQaLWeEbngeq3pQIDAQAB
------END PUBLIC KEY-----`;
-
 function pemToArrayBuffer(pem: string): Uint8Array {
 	const b64 = pem
 		.replace(/-----BEGIN [\w\s]+-----/, "")
@@ -27,13 +19,13 @@ function pemToArrayBuffer(pem: string): Uint8Array {
 	return bytes;
 }
 
-async function verifySignature(signatureBase64: string, plainText: string): Promise<boolean> {
+async function verifySignature(signatureBase64: string, plainText: string, publicKeyPem: string): Promise<boolean> {
 	try {
 		const signatureBytes = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0));
 
 		const publicKey = await crypto.subtle.importKey(
 			"spki",
-			pemToArrayBuffer(PUBLIC_KEY_PEM),
+			pemToArrayBuffer(publicKeyPem),
 			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
 			false,
 			["verify"]
@@ -127,7 +119,11 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 	}
 
 	// Verify the signature against the plaintext
-	const isValid = await verifySignature(signatureToken, tokenId);
+	const publicKeyPem = context.cloudflare.env.RSA_PUBLIC_KEY;
+	if (!publicKeyPem) {
+		throw new Response("Server configuration error", { status: 500 });
+	}
+	const isValid = await verifySignature(signatureToken, tokenId, publicKeyPem);
 
 	if (!isValid) {
 		logUnauthorizedAccess(clientIP, signatureToken, "Invalid signature");
