@@ -2,7 +2,7 @@ import type { Route } from "./+types/home";
 import { Welcome } from "../welcome/welcome";
 
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 500;
 
 // In-memory store for rate limiting (replace with Redis in production)
 const attemptMap = new Map<string, { count: number; resetTime: number }>();
