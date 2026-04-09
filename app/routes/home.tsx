@@ -10,7 +10,10 @@ const attemptMap = new Map<string, { count: number; resetTime: number }>();
 
 // RSA Public Key (from your RSA key pair)
 const PUBLIC_KEY = process.env.RSA_PUBLIC_KEY || `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCSZdW0UjnXLENtH/6/nXiWuDtm
+GK/dGIp9d06cEHK8LsUBvKUqYvUlD5kMQEYZitu+K5Hl3rBj24gUbEYcoNOaMEd3
+PLW5sH0kEjZGMWAF5vKSXzW2qzAKvRujW3nGcTvvBgES+VDnlMHbTMQWvN6J8D4X
+LGfwQaLWeEbngeq3pQIDAQAB
 -----END PUBLIC KEY-----`;
 
 function decryptRSA(encryptedToken: string): string | null {
