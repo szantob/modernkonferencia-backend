@@ -1,7 +1,6 @@
 import type { Route } from "./+types/keygen";
-import crypto from "crypto";
 
-const PRIVATE_KEY = process.env.RSA_PRIVATE_KEY || `-----BEGIN RSA PRIVATE KEY-----
+const PRIVATE_KEY = `-----BEGIN RSA PRIVATE KEY-----
 MIICXgIBAAKBgQCSZdW0UjnXLENtH/6/nXiWuDtmGK/dGIp9d06cEHK8LsUBvKUq
 YvUlD5kMQEYZitu+K5Hl3rBj24gUbEYcoNOaMEd3PLW5sH0kEjZGMWAF5vKSXzW2
 qzAKvRujW3nGcTvvBgES+VDnlMHbTMQWvN6J8D4XLGfwQaLWeEbngeq3pQIDAQAB
@@ -17,26 +16,74 @@ URPb7a+9RyAXOE66YbAnAkEAkmowqlMfEoxGVObW2c0yS90M0GSrFelsz7qmPhe+
 6U0Q8+vUKNBOJ5jc1h2MHAqhT3P6ulSST8ApOyFpnyVyKQ==
 -----END RSA PRIVATE KEY-----`;
 
-function encryptToken(baseText: string = "entrypass", incrementalNumber: number = 1): string {
-	try {
-		// Format: "entrypass00000001"
-		const formattedNumber = String(incrementalNumber).padStart(8, "0");
-		const plainToken = `${baseText}${formattedNumber}`;
-
-		// Encrypt using RSA private key
-		const encrypted = crypto.privateEncrypt(
-			{
-				key: PRIVATE_KEY,
-				padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-			},
-			Buffer.from(plainToken)
-		);
-
-		// Return as base64
-		return encrypted.toString("base64");
-	} catch (error) {
-		throw new Error("Failed to encrypt token");
+function pemToArrayBuffer(pem: string): Uint8Array {
+	const b64 = pem
+		.replace(/-----BEGIN [\w\s]+-----/, "")
+		.replace(/-----END [\w\s]+-----/, "")
+		.replace(/\s/g, "");
+	const binary = atob(b64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
 	}
+	return bytes;
+}
+
+function encodeDerLength(tag: number, length: number): Uint8Array {
+	if (length < 0x80) {
+		return new Uint8Array([tag, length]);
+	} else if (length < 0x100) {
+		return new Uint8Array([tag, 0x81, length]);
+	} else {
+		return new Uint8Array([tag, 0x82, (length >> 8) & 0xff, length & 0xff]);
+	}
+}
+
+function pkcs1ToPkcs8(pkcs1Bytes: Uint8Array): Uint8Array {
+	// AlgorithmIdentifier: SEQUENCE { OID rsaEncryption (1.2.840.113549.1.1.1), NULL }
+	const algorithmIdentifier = new Uint8Array([
+		0x30, 0x0d,
+		0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01,
+		0x05, 0x00,
+	]);
+	// Version INTEGER { 0 }
+	const version = new Uint8Array([0x02, 0x01, 0x00]);
+	// OCTET STRING containing the PKCS#1 bytes
+	const octetStringHeader = encodeDerLength(0x04, pkcs1Bytes.length);
+	const innerLength =
+		version.length + algorithmIdentifier.length + octetStringHeader.length + pkcs1Bytes.length;
+	const outerHeader = encodeDerLength(0x30, innerLength);
+
+	const pkcs8 = new Uint8Array(outerHeader.length + innerLength);
+	let offset = 0;
+	pkcs8.set(outerHeader, offset); offset += outerHeader.length;
+	pkcs8.set(version, offset); offset += version.length;
+	pkcs8.set(algorithmIdentifier, offset); offset += algorithmIdentifier.length;
+	pkcs8.set(octetStringHeader, offset); offset += octetStringHeader.length;
+	pkcs8.set(pkcs1Bytes, offset);
+	return pkcs8;
+}
+
+async function encryptToken(baseText: string = "entrypass", incrementalNumber: number = 1): Promise<string> {
+	// Format: "entrypass00000001"
+	const formattedNumber = String(incrementalNumber).padStart(8, "0");
+	const plainToken = `${baseText}${formattedNumber}`;
+
+	const pkcs1Bytes = pemToArrayBuffer(PRIVATE_KEY);
+	const pkcs8Bytes = pkcs1ToPkcs8(pkcs1Bytes);
+
+	const privateKey = await crypto.subtle.importKey(
+		"pkcs8",
+		pkcs8Bytes,
+		{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+		false,
+		["sign"]
+	);
+
+	const encodedData = new TextEncoder().encode(plainToken);
+	const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", privateKey, encodedData);
+
+	return btoa(Array.from(new Uint8Array(signature), (b) => String.fromCharCode(b)).join(""));
 }
 
 export function meta({}: Route.MetaArgs) {
@@ -65,7 +112,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 		}
 
 		try {
-			const encryptedToken = encryptToken(baseText, incrementalNumber);
+			const encryptedToken = await encryptToken(baseText, incrementalNumber);
 			return new Response(
 				JSON.stringify({
 					plainText: `${baseText}${String(incrementalNumber).padStart(8, "0")}`,
@@ -105,7 +152,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 				);
 			}
 
-			const encryptedToken = encryptToken(baseText, incrementalNumber);
+			const encryptedToken = await encryptToken(baseText, incrementalNumber);
 			return new Response(
 				JSON.stringify({
 					plainText: `${baseText}${String(incrementalNumber).padStart(8, "0")}`,
