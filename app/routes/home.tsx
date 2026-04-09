@@ -1,27 +1,49 @@
 import type { Route } from "./+types/home";
 import { Welcome } from "../welcome/welcome";
+import crypto from "crypto";
 
-const VALID_TOKEN = process.env.CONTENT_TOKEN || "your-secret-token";
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
 const MAX_ATTEMPTS = 5;
 
 // In-memory store for rate limiting (replace with Redis in production)
 const attemptMap = new Map<string, { count: number; resetTime: number }>();
 
-function timingSafeCompare(a: string, b: string): boolean {
-	if (a.length !== b.length) {
-		return false;
+// RSA Public Key (from your RSA key pair)
+const PUBLIC_KEY = process.env.RSA_PUBLIC_KEY || `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...
+-----END PUBLIC KEY-----`;
+
+function decryptRSA(encryptedToken: string): string | null {
+	try {
+		// Decode base64 encrypted token
+		const encryptedBuffer = Buffer.from(encryptedToken, "base64");
+		
+		// Decrypt using RSA public key
+		const decrypted = crypto.publicDecrypt(
+			{
+				key: PUBLIC_KEY,
+				padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+			},
+			encryptedBuffer
+		);
+		
+		return decrypted.toString("utf-8");
+	} catch (error) {
+		return null;
 	}
-	let result = 0;
-	for (let i = 0; i < a.length; i++) {
-		result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-	}
-	return result === 0;
 }
 
-function logUnauthorizedAccess(ip: string, token: string | null): void {
+function validateToken(decryptedToken: string): boolean {
+	// Format should be: "entrypass" + 8-digit number (e.g., "entrypass00000001")
+	const tokenRegex = /^entrypass\d{8}$/;
+	return tokenRegex.test(decryptedToken);
+}
+
+function logUnauthorizedAccess(ip: string, token: string | null, reason: string): void {
 	const timestamp = new Date().toISOString();
-	console.warn(`[${timestamp}] Unauthorized access attempt from IP: ${ip}, token: ${token || "none"}`);
+	console.warn(
+		`[${timestamp}] Unauthorized access attempt from IP: ${ip}, reason: ${reason}, token: ${token || "none"}`
+	);
 }
 
 function isRateLimited(ip: string): boolean {
@@ -61,22 +83,40 @@ export function meta({}: Route.MetaArgs) {
 export function loader({ context, request }: Route.LoaderArgs) {
 	const clientIP = getClientIP(request);
 	const url = new URL(request.url);
-	const token = url.searchParams.get("token");
+	const encryptedToken = url.searchParams.get("token");
 
 	// Check rate limiting
 	if (isRateLimited(clientIP)) {
-		logUnauthorizedAccess(clientIP, token);
+		logUnauthorizedAccess(clientIP, encryptedToken, "Rate limit exceeded");
 		throw new Response("Too many attempts. Please try again later.", {
 			status: 429,
 			statusText: "Too Many Requests",
 		});
 	}
 
-	// Validate token using timing-safe comparison
-	const isAuthorized = token && timingSafeCompare(token, VALID_TOKEN);
+	// Check if token is provided
+	if (!encryptedToken) {
+		logUnauthorizedAccess(clientIP, null, "No token provided");
+		throw new Response("Access Denied", {
+			status: 403,
+			statusText: "Forbidden",
+		});
+	}
 
-	if (!isAuthorized) {
-		logUnauthorizedAccess(clientIP, token);
+	// Decrypt the token
+	const decryptedToken = decryptRSA(encryptedToken);
+
+	if (!decryptedToken) {
+		logUnauthorizedAccess(clientIP, encryptedToken, "Failed to decrypt token");
+		throw new Response("Access Denied", {
+			status: 403,
+			statusText: "Forbidden",
+		});
+	}
+
+	// Validate the decrypted token format
+	if (!validateToken(decryptedToken)) {
+		logUnauthorizedAccess(clientIP, encryptedToken, "Invalid token format");
 		throw new Response("Access Denied", {
 			status: 403,
 			statusText: "Forbidden",
