@@ -7,6 +7,7 @@ declare namespace Cloudflare {
 	}
 	interface Env {
 		VALUE_FROM_CLOUDFLARE: "Hello from Cloudflare";
+		CLOUDFLARE_STREAM_VIDEO_ID: string;
 	}
 }
 interface Env extends Cloudflare.Env {}

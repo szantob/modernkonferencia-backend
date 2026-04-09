@@ -1,5 +1,4 @@
 import type { Route } from "./+types/home";
-import { Welcome } from "../welcome/welcome";
 
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
 const MAX_ATTEMPTS = 500;
@@ -138,9 +137,22 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 		});
 	}
 
-	return { message: context.cloudflare.env.VALUE_FROM_CLOUDFLARE };
+	return {
+		message: context.cloudflare.env.VALUE_FROM_CLOUDFLARE,
+		videoId: context.cloudflare.env.CLOUDFLARE_STREAM_VIDEO_ID,
+	};
 }
 
 export default function Home({ loaderData }: Route.ComponentProps) {
-	return <Welcome message={loaderData.message} />;
+	return (
+		<div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100vh", backgroundColor: "#000" }}>
+			<iframe
+				src={`https://iframe.cloudflarestream.com/${loaderData.videoId}`}
+				style={{ border: "none", width: "100%", maxWidth: "960px", aspectRatio: "16/9" }}
+				allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture;"
+				allowFullScreen
+				title="Conference Video"
+			/>
+		</div>
+	);
 }
