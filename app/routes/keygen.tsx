@@ -97,8 +97,16 @@ export async function loader({ request }: Route.LoaderArgs) {
 	// Only allow POST requests or GET with query parameters
 	if (request.method === "GET") {
 		const url = new URL(request.url);
-		const baseText = url.searchParams.get("base") || "entrypass";
-		const incrementalNumber = parseInt(url.searchParams.get("number") || "1", 10);
+		const baseParam = url.searchParams.get("base");
+		const numberParam = url.searchParams.get("number");
+
+		// No query params — render documentation page
+		if (baseParam === null && numberParam === null) {
+			return null;
+		}
+
+		const baseText = baseParam ?? "entrypass";
+		const incrementalNumber = parseInt(numberParam ?? "1", 10);
 
 		// Validate inputs
 		if (incrementalNumber < 0 || incrementalNumber > 99999999) {
@@ -113,17 +121,11 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 		try {
 			const encryptedToken = await encryptToken(baseText, incrementalNumber);
-			return new Response(
-				JSON.stringify({
-					plainText: `${baseText}${String(incrementalNumber).padStart(8, "0")}`,
-					encrypted: encryptedToken,
-					url: `/?token=${encryptedToken}`,
-				}),
-				{
-					status: 200,
-					headers: { "Content-Type": "application/json" },
-				}
-			);
+			return {
+				plainText: `${baseText}${String(incrementalNumber).padStart(8, "0")}`,
+				encrypted: encryptedToken,
+				url: `/?token=${encryptedToken}`,
+			};
 		} catch (error) {
 			return new Response(
 				JSON.stringify({ error: "Failed to generate token" }),
@@ -178,11 +180,20 @@ export async function loader({ request }: Route.LoaderArgs) {
 	return new Response("Method Not Allowed", { status: 405 });
 }
 
-export default function KeyGen() {
+export default function KeyGen({ loaderData }: Route.ComponentProps) {
 	return (
 		<div style={{ padding: "20px", fontFamily: "monospace" }}>
 			<h1>Token Generator</h1>
 			<p>Generate encrypted access tokens for your application</p>
+
+			{loaderData && (
+				<section style={{ marginBottom: "30px", padding: "15px", backgroundColor: "#e8f5e9", borderLeft: "4px solid #4caf50" }}>
+					<h2>✅ Generated Token</h2>
+					<p><strong>Plain Text:</strong> <code>{loaderData.plainText}</code></p>
+					<p><strong>Encrypted:</strong> <code style={{ wordBreak: "break-all" }}>{loaderData.encrypted}</code></p>
+					<p><strong>URL:</strong> <code><a href={loaderData.url} aria-label={`Navigate to application with generated token: ${loaderData.url}`}>{loaderData.url}</a></code></p>
+				</section>
+			)}
 
 			<section style={{ marginBottom: "30px" }}>
 				<h2>Using GET Request:</h2>
