@@ -1,9 +1,21 @@
 import type { Route } from "./+types/keygen";
 import crypto from "crypto";
 
-const PRIVATE_KEY = process.env.RSA_PRIVATE_KEY || `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC...
------END PRIVATE KEY-----`;
+const PRIVATE_KEY = process.env.RSA_PRIVATE_KEY || `-----BEGIN RSA PRIVATE KEY-----
+MIICXgIBAAKBgQCSZdW0UjnXLENtH/6/nXiWuDtmGK/dGIp9d06cEHK8LsUBvKUq
+YvUlD5kMQEYZitu+K5Hl3rBj24gUbEYcoNOaMEd3PLW5sH0kEjZGMWAF5vKSXzW2
+qzAKvRujW3nGcTvvBgES+VDnlMHbTMQWvN6J8D4XLGfwQaLWeEbngeq3pQIDAQAB
+AoGBAIz0yh/V7+UStFUUslbSivIrrt1ttZ6e63FEd4bie2ZfbcZvWWQHZdvqOcVG
++XfMcCmZj9+RW6q6DDsFyTf1Tea53HZgU+P0XxSDj4HK2HrQ93umy7JhUbq3Ap9B
+vkntxEJzyRszaR9sDX86HEozOTYg8EL4B1F7N9lf+xBE8Ho9AkEAxpI6yltV4ueb
+hiOoD6SFCvBrTLFn0Bk3yZ2tUb8lHkRiA4HD34SNkKQDCIE4JfjdAVPKt3wQ4027
+8T5KH2ICowJBALy8zSsdh6MrDNKZbQlmzY0HoZBXyCjhpytPjmFnAkUHzV6gC30t
+SjvSyx6aJngVKkoeaTpK7Po9u6OnZ370SRcCQQC1WJ6wZ7GMRBDY9H9rqciHMQIN
+TIeOmTlFu+apnXN8rN8GbOBBpYDT87WBcuGgbCMKL0gXQgr6S+e0bjqrZosZAkB4
+nIrch7V7P3KlTujQPkMTYhIMZRyDi5jB48hQVHyt0ouacdqFtyCeVFn7h3UX/iaV
+URPb7a+9RyAXOE66YbAnAkEAkmowqlMfEoxGVObW2c0yS90M0GSrFelsz7qmPhe+
+6U0Q8+vUKNBOJ5jc1h2MHAqhT3P6ulSST8ApOyFpnyVyKQ==
+-----END RSA PRIVATE KEY-----`;
 
 function encryptToken(baseText: string = "entrypass", incrementalNumber: number = 1): string {
 	try {
