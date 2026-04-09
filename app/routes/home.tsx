@@ -1,6 +1,5 @@
 import type { Route } from "./+types/home";
 import { Welcome } from "../welcome/welcome";
-import crypto from "crypto";
 
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 minutes
 const MAX_ATTEMPTS = 5;
@@ -9,37 +8,49 @@ const MAX_ATTEMPTS = 5;
 const attemptMap = new Map<string, { count: number; resetTime: number }>();
 
 // RSA Public Key (from your RSA key pair)
-const PUBLIC_KEY = process.env.RSA_PUBLIC_KEY || `-----BEGIN PUBLIC KEY-----
+const PUBLIC_KEY_PEM = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCSZdW0UjnXLENtH/6/nXiWuDtm
 GK/dGIp9d06cEHK8LsUBvKUqYvUlD5kMQEYZitu+K5Hl3rBj24gUbEYcoNOaMEd3
 PLW5sH0kEjZGMWAF5vKSXzW2qzAKvRujW3nGcTvvBgES+VDnlMHbTMQWvN6J8D4X
 LGfwQaLWeEbngeq3pQIDAQAB
 -----END PUBLIC KEY-----`;
 
-function decryptRSA(encryptedToken: string): string | null {
+function pemToArrayBuffer(pem: string): Uint8Array {
+	const b64 = pem
+		.replace(/-----BEGIN [\w\s]+-----/, "")
+		.replace(/-----END [\w\s]+-----/, "")
+		.replace(/\s/g, "");
+	const binary = atob(b64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes;
+}
+
+async function verifySignature(signatureBase64: string, plainText: string): Promise<boolean> {
 	try {
-		// Decode base64 encrypted token
-		const encryptedBuffer = Buffer.from(encryptedToken, "base64");
-		
-		// Decrypt using RSA public key
-		const decrypted = crypto.publicDecrypt(
-			{
-				key: PUBLIC_KEY,
-				padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-			},
-			encryptedBuffer
+		const signatureBytes = Uint8Array.from(atob(signatureBase64), (c) => c.charCodeAt(0));
+
+		const publicKey = await crypto.subtle.importKey(
+			"spki",
+			pemToArrayBuffer(PUBLIC_KEY_PEM),
+			{ name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+			false,
+			["verify"]
 		);
-		
-		return decrypted.toString("utf-8");
-	} catch (error) {
-		return null;
+
+		const encodedData = new TextEncoder().encode(plainText);
+		return await crypto.subtle.verify("RSASSA-PKCS1-v1_5", publicKey, signatureBytes, encodedData);
+	} catch {
+		return false;
 	}
 }
 
-function validateToken(decryptedToken: string): boolean {
+function validateToken(plainText: string): boolean {
 	// Format should be: "entrypass" + 8-digit number (e.g., "entrypass00000001")
 	const tokenRegex = /^entrypass\d{8}$/;
-	return tokenRegex.test(decryptedToken);
+	return tokenRegex.test(plainText);
 }
 
 function logUnauthorizedAccess(ip: string, token: string | null, reason: string): void {
@@ -83,43 +94,44 @@ export function meta({}: Route.MetaArgs) {
 	];
 }
 
-export function loader({ context, request }: Route.LoaderArgs) {
+export async function loader({ context, request }: Route.LoaderArgs) {
 	const clientIP = getClientIP(request);
 	const url = new URL(request.url);
-	const encryptedToken = url.searchParams.get("token");
+	const signatureToken = url.searchParams.get("token");
+	const tokenId = url.searchParams.get("id");
 
 	// Check rate limiting
 	if (isRateLimited(clientIP)) {
-		logUnauthorizedAccess(clientIP, encryptedToken, "Rate limit exceeded");
+		logUnauthorizedAccess(clientIP, signatureToken, "Rate limit exceeded");
 		throw new Response("Too many attempts. Please try again later.", {
 			status: 429,
 			statusText: "Too Many Requests",
 		});
 	}
 
-	// Check if token is provided
-	if (!encryptedToken) {
-		logUnauthorizedAccess(clientIP, null, "No token provided");
+	// Check if token and id are provided
+	if (!signatureToken || !tokenId) {
+		logUnauthorizedAccess(clientIP, null, "No token or id provided");
 		throw new Response("Access Denied", {
 			status: 403,
 			statusText: "Forbidden",
 		});
 	}
 
-	// Decrypt the token
-	const decryptedToken = decryptRSA(encryptedToken);
-
-	if (!decryptedToken) {
-		logUnauthorizedAccess(clientIP, encryptedToken, "Failed to decrypt token");
+	// Validate the plaintext token format first
+	if (!validateToken(tokenId)) {
+		logUnauthorizedAccess(clientIP, signatureToken, "Invalid token format");
 		throw new Response("Access Denied", {
 			status: 403,
 			statusText: "Forbidden",
 		});
 	}
 
-	// Validate the decrypted token format
-	if (!validateToken(decryptedToken)) {
-		logUnauthorizedAccess(clientIP, encryptedToken, "Invalid token format");
+	// Verify the signature against the plaintext
+	const isValid = await verifySignature(signatureToken, tokenId);
+
+	if (!isValid) {
+		logUnauthorizedAccess(clientIP, signatureToken, "Invalid signature");
 		throw new Response("Access Denied", {
 			status: 403,
 			statusText: "Forbidden",
