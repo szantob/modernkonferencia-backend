@@ -124,7 +124,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 			return {
 				plainText: `${baseText}${String(incrementalNumber).padStart(8, "0")}`,
 				encrypted: encryptedToken,
-				url: `/?token=${encryptedToken}`,
+				url: `/?token=${encodeURIComponent(encryptedToken)}&id=${encodeURIComponent(`${baseText}${String(incrementalNumber).padStart(8, "0")}`)}`,
 			};
 		} catch (error) {
 			return new Response(
@@ -159,7 +159,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 				JSON.stringify({
 					plainText: `${baseText}${String(incrementalNumber).padStart(8, "0")}`,
 					encrypted: encryptedToken,
-					url: `/?token=${encryptedToken}`,
+					url: `/?token=${encodeURIComponent(encryptedToken)}&id=${encodeURIComponent(`${baseText}${String(incrementalNumber).padStart(8, "0")}`)}`,
 				}),
 				{
 					status: 200,
